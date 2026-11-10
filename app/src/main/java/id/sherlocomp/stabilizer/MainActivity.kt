@@ -43,7 +43,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun StabilizerApp() {
     val context = LocalContext.current
-    val monitor = remember { NetworkMonitor(context) }
+    // Monitor yang sama dengan yang dipakai layanan penjaga (lihat MonitorBersama).
+    val monitor = remember { MonitorBersama.instans(context) }
     val tester = remember { QualityTester() }
 
     fun semuaIzinAda(): Boolean = IZIN_DIBUTUHKAN.all {
@@ -74,9 +75,9 @@ private fun StabilizerApp() {
     }
 
     DisposableEffect(Unit) {
-        monitor.start()
+        MonitorBersama.mulai(context)
         onDispose {
-            monitor.stop()
+            MonitorBersama.selesai()
             tester.cancel()
         }
     }
