@@ -12,7 +12,6 @@ import android.os.ParcelFileDescriptor
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import java.io.FileInputStream
 import java.io.IOException
 
 /** Aplikasi yang dipilih pengguna sebagai aplikasi fokus. */
@@ -22,10 +21,14 @@ data class PilihanFokus(val paket: String, val nama: String)
  * Mode Fokus Aplikasi (versi sederhana: blokir aplikasi lain).
  *
  * Membuat VPN lokal yang menangkap lalu lintas SEMUA aplikasi kecuali aplikasi fokus dan
- * Stabilizer sendiri, lalu membuang semua paket yang masuk ke terowongan. Akibatnya aplikasi
- * lain tidak punya internet selama mode ini aktif, dan aplikasi fokus memakai jalur seluler
- * biasa tanpa rebutan bandwidth. Tidak ada penerusan paket, jadi tidak ada data yang keluar
- * lewat VPN ini. Tidak menambah kekuatan sinyal radio.
+ * Stabilizer sendiri. Terowongan sengaja TIDAK dibaca: paket yang masuk menumpuk di antrean
+ * kernel lalu dijatuhkan. Akibatnya aplikasi lain tidak punya internet selama mode ini aktif,
+ * dan aplikasi fokus memakai jalur seluler biasa tanpa rebutan bandwidth. Tidak ada data yang
+ * diteruskan keluar. Tidak menambah kekuatan sinyal radio.
+ *
+ * Kenapa tanpa utas pembaca: utas yang tertahan membaca terowongan menahan antarmuka VPN tetap
+ * hidup walau fd sudah ditutup, sehingga mode tidak bisa dimatikan (terbukti di HP pada 0.5.0).
+ * Menutup fd adalah satu-satunya hal yang mematikan VPN, jadi tidak boleh ada yang menahannya.
  *
  * Pengaman: bila layanan mati atau proses dimatikan, terowongan ikut tertutup dan internet
  * aplikasi lain kembali normal. START_NOT_STICKY, tidak menyala sendiri.
@@ -61,8 +64,15 @@ class FokusService : VpnService() {
             )
         }
 
+        /**
+         * Mematikan mode fokus lewat onStartCommand (aksi HENTI), bukan stopService: selama VPN
+         * aktif sistem memegang ikatan (bind) ke layanan ini, jadi stopService saja tidak
+         * menghancurkannya dan terowongan tetap hidup.
+         */
         fun henti(context: Context) {
-            context.stopService(Intent(context, FokusService::class.java))
+            context.startService(
+                Intent(context, FokusService::class.java).setAction(AKSI_HENTI)
+            )
         }
 
         fun muatPilihan(context: Context): PilihanFokus? {
@@ -81,7 +91,6 @@ class FokusService : VpnService() {
     }
 
     private var tun: ParcelFileDescriptor? = null
-    private var pembaca: Thread? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == AKSI_HENTI) {
@@ -102,7 +111,6 @@ class FokusService : VpnService() {
         try {
             val b = Builder()
                 .setSession("Stabilizer Fokus")
-                .setBlocking(true)
                 .addAddress("10.77.0.2", 32)
                 .addRoute("0.0.0.0", 0)
                 .addAddress("fd00:77::2", 128)
@@ -117,22 +125,8 @@ class FokusService : VpnService() {
                 berhenti()
                 return
             }
+            // fd hanya disimpan (tidak dibaca) supaya bisa ditutup kapan saja.
             tun = pfd
-            val masuk = FileInputStream(pfd.fileDescriptor)
-            val t = Thread {
-                val buf = ByteArray(32767)
-                try {
-                    // Semua paket dibuang; tidak ada yang diteruskan.
-                    while (masuk.read(buf) >= 0) {
-                        // buang
-                    }
-                } catch (e: IOException) {
-                    // Terowongan ditutup.
-                }
-            }
-            t.isDaemon = true
-            t.start()
-            pembaca = t
             paket = target
             berjalan = true
             tampilkanNotif(muatPilihan(this)?.takeIf { it.paket == target }?.nama ?: target)
@@ -180,8 +174,6 @@ class FokusService : VpnService() {
     }
 
     private fun tutupTerowongan() {
-        pembaca?.interrupt()
-        pembaca = null
         try {
             tun?.close()
         } catch (e: IOException) {
