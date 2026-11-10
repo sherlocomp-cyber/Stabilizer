@@ -15,7 +15,8 @@ data class CellDetail(
     val tech: String = "-",
     val band: String = "-",
     val channel: Int? = null, // ARFCN / EARFCN
-    val pci: Int? = null
+    val pci: Int? = null,
+    val terdaftar: Boolean = false // true = sel yang sedang dipakai HP
 )
 
 data class NetworkSnapshot(
@@ -25,6 +26,7 @@ data class NetworkSnapshot(
     val lte: SignalMetrics? = null,
     val cells: List<CellDetail> = emptyList(),
     val note: String? = null,
+    val diag: String? = null, // baris diagnosis untuk pelaporan masalah
     val updatedAtMs: Long = 0L
 )
 

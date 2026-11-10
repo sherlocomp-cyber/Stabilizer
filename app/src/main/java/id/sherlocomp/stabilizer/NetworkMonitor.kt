@@ -3,6 +3,7 @@ package id.sherlocomp.stabilizer
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.os.Handler
 import android.os.Looper
 import android.telephony.CellIdentityLte
@@ -13,6 +14,7 @@ import android.telephony.CellInfoNr
 import android.telephony.CellSignalStrengthLte
 import android.telephony.CellSignalStrengthNr
 import android.telephony.SignalStrength
+import android.telephony.SubscriptionManager
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyDisplayInfo
 import android.telephony.TelephonyManager
@@ -24,15 +26,22 @@ import java.util.concurrent.Executors
 
 /**
  * Membaca jenis jaringan, kekuatan sinyal, band, dan channel.
+ * Memakai langganan (SIM) yang dipilih untuk data seluler, bukan SIM bawaan telepon.
  * Semua status internal hanya disentuh dari satu thread (executor);
  * hasil akhir dikirim ke thread utama lewat [snapshot].
  */
 class NetworkMonitor(context: Context) {
     private val appContext = context.applicationContext
-    private val telephony: TelephonyManager? =
+    private val baseTelephony: TelephonyManager? =
         appContext.getSystemService(TelephonyManager::class.java)
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    @Volatile
+    private var telephony: TelephonyManager? = null
+
+    @Volatile
+    private var subId = SubscriptionManager.INVALID_SUBSCRIPTION_ID
 
     var snapshot by mutableStateOf(NetworkSnapshot())
         private set
@@ -46,16 +55,25 @@ class NetworkMonitor(context: Context) {
     private var nrMetrics: SignalMetrics? = null
     private var lteMetrics: SignalMetrics? = null
     private var cells: List<CellDetail> = emptyList()
+    private var cellTotal = 0
+    private var cellTerdaftar = 0
+    private var cellSumber = "-"
     private var note: String? = null
 
     private fun hasPermission(permission: String): Boolean =
         ContextCompat.checkSelfPermission(appContext, permission) ==
             PackageManager.PERMISSION_GRANTED
 
+    private fun idLanggananData(): Int = try {
+        SubscriptionManager.getDefaultDataSubscriptionId()
+    } catch (e: SecurityException) {
+        SubscriptionManager.INVALID_SUBSCRIPTION_ID
+    }
+
     fun start() {
         if (running) return
-        val tm = telephony
-        if (tm == null) {
+        val base = baseTelephony
+        if (base == null) {
             snapshot = snapshot.copy(note = "Perangkat ini tidak punya layanan telepon.")
             return
         }
@@ -64,6 +82,14 @@ class NetworkMonitor(context: Context) {
             return
         }
         try {
+            val id = idLanggananData()
+            subId = id
+            val tm = if (id != SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                base.createForSubscriptionId(id)
+            } else {
+                base
+            }
+            telephony = tm
             val cb = Callback()
             tm.registerTelephonyCallback(executor, cb)
             callback = cb
@@ -101,9 +127,18 @@ class NetworkMonitor(context: Context) {
         try {
             tm.requestCellInfoUpdate(executor, object : TelephonyManager.CellInfoCallback() {
                 override fun onCellInfo(cellInfo: MutableList<CellInfo>) {
-                    cells = cellInfo.filter { it.isRegistered }.mapNotNull { parseCell(it) }
-                    note = null
-                    publish()
+                    var daftar: List<CellInfo> = cellInfo
+                    var sumber = "update"
+                    if (daftar.isEmpty()) {
+                        // Beberapa ROM mengembalikan daftar kosong; coba data cache sistem.
+                        daftar = try {
+                            tm.allCellInfo ?: emptyList()
+                        } catch (e: SecurityException) {
+                            emptyList()
+                        }
+                        sumber = "cache"
+                    }
+                    simpanSel(daftar, sumber)
                 }
 
                 override fun onError(errorCode: Int, detail: Throwable?) {
@@ -119,6 +154,15 @@ class NetworkMonitor(context: Context) {
         }
     }
 
+    private fun simpanSel(daftar: List<CellInfo>, sumber: String) {
+        cells = daftar.mapNotNull { parseCell(it) }.sortedByDescending { it.terdaftar }
+        cellTotal = daftar.size
+        cellTerdaftar = daftar.count { it.isRegistered }
+        cellSumber = sumber
+        note = null
+        publish()
+    }
+
     private fun parseCell(info: CellInfo): CellDetail? = when (info) {
         is CellInfoNr -> {
             val id = info.cellIdentity as? CellIdentityNr
@@ -131,7 +175,8 @@ class NetworkMonitor(context: Context) {
                     "-"
                 },
                 channel = id?.nrarfcn?.validOrNull(),
-                pci = id?.pci?.validOrNull()
+                pci = id?.pci?.validOrNull(),
+                terdaftar = info.isRegistered
             )
         }
         is CellInfoLte -> {
@@ -145,15 +190,26 @@ class NetworkMonitor(context: Context) {
                     "-"
                 },
                 channel = id.earfcn.validOrNull(),
-                pci = id.pci.validOrNull()
+                pci = id.pci.validOrNull(),
+                terdaftar = info.isRegistered
             )
         }
-        else -> null
+        else -> CellDetail(
+            tech = info.javaClass.simpleName.removePrefix("CellInfo"),
+            terdaftar = info.isRegistered
+        )
     }
 
     /** Selalu dipanggil dari thread executor. */
     private fun publish() {
-        val operator = telephony?.networkOperatorName?.takeIf { it.isNotBlank() } ?: "-"
+        val tm = telephony
+        val operator = listOf(tm?.networkOperatorName, tm?.simOperatorName, tm?.networkOperator)
+            .firstOrNull { !it.isNullOrBlank() } ?: "-"
+        val lokasiAktif =
+            appContext.getSystemService(LocationManager::class.java)?.isLocationEnabled
+        val teksLokasi = if (lokasiAktif == null) "?" else if (lokasiAktif) "aktif" else "MATI"
+        val diag = "Sub data: $subId | Lokasi sistem: $teksLokasi | " +
+            "Sel dibaca: $cellTotal (terdaftar $cellTerdaftar, sumber $cellSumber)"
         val snap = NetworkSnapshot(
             operatorName = operator,
             networkLabel = labelJaringan(networkType, overrideType),
@@ -161,6 +217,7 @@ class NetworkMonitor(context: Context) {
             lte = lteMetrics,
             cells = cells,
             note = note,
+            diag = diag,
             updatedAtMs = System.currentTimeMillis()
         )
         mainHandler.post { snapshot = snap }

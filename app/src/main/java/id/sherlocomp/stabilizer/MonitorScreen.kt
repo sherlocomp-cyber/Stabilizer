@@ -11,7 +11,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -27,13 +29,22 @@ fun MonitorScreen(
     onBatalUji: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val versi = remember {
+        try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "?"
+        } catch (e: Exception) {
+            "?"
+        }
+    }
+
     Column(
         modifier = modifier
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("Stabilizer", style = MaterialTheme.typography.headlineMedium)
+        Text("Stabilizer v$versi", style = MaterialTheme.typography.headlineMedium)
 
         if (!izinLengkap) {
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -71,15 +82,16 @@ fun MonitorScreen(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    "Sel terdaftar (band dan channel)",
+                    "Sel terdeteksi (band dan channel)",
                     style = MaterialTheme.typography.titleMedium
                 )
                 if (snapshot.cells.isEmpty()) {
                     Text("Belum ada data")
                 } else {
-                    snapshot.cells.forEach { c ->
+                    snapshot.cells.take(8).forEach { c ->
+                        val tanda = if (c.terdaftar) " (terdaftar)" else ""
                         Text(
-                            "${c.tech}: band ${c.band}, channel ${c.channel ?: "-"}, " +
+                            "${c.tech}$tanda: band ${c.band}, channel ${c.channel ?: "-"}, " +
                                 "PCI ${c.pci ?: "-"}"
                         )
                     }
@@ -93,6 +105,9 @@ fun MonitorScreen(
             val jam = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
                 .format(Date(snapshot.updatedAtMs))
             Text("Diperbarui $jam", style = MaterialTheme.typography.labelSmall)
+        }
+        snapshot.diag?.let {
+            Text(it, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
