@@ -95,6 +95,7 @@ private fun StabilizerApp() {
         konteksUji = konteksUji,
         penjaga = {
             GuardCard()
+            FokusCard()
             RiwayatUjiCard()
         }
     )
