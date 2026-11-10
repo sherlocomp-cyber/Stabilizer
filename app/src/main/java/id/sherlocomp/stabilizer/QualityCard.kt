@@ -30,7 +30,8 @@ private fun angka(nilai: Double?, satuan: String): String =
 fun QualityCard(
     state: QualityState,
     onMulai: (Boolean) -> Unit,
-    onBatal: () -> Unit
+    onBatal: () -> Unit,
+    konteks: String? = null
 ) {
     var denganUnduh by remember { mutableStateOf(false) }
 
@@ -74,6 +75,13 @@ fun QualityCard(
                     Text("Kecepatan unduh: ${angka(r.downloadMbps, "Mbps")}")
                 }
                 r.note?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (konteks != null) {
+                    Text(
+                        "Sinyal saat uji selesai",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Text(konteks, style = MaterialTheme.typography.bodySmall)
+                }
                 Text(
                     "Latency diukur dari waktu membuka koneksi TCP, jadi sedikit lebih " +
                         "tinggi dari ping biasa. Penilaian hanya perkiraan kasar.",
