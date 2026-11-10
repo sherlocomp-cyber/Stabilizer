@@ -1,5 +1,7 @@
 package id.sherlocomp.stabilizer
 
+import android.content.Context
+import android.location.LocationManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +38,13 @@ fun MonitorScreen(
         } catch (e: Exception) {
             "?"
         }
+    }
+    // Dibaca ulang tiap recompose (snapshot diperbarui tiap beberapa detik).
+    val lokasiAktif = try {
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        lm.isLocationEnabled
+    } catch (e: Exception) {
+        true
     }
 
     Column(
@@ -87,6 +96,15 @@ fun MonitorScreen(
                 )
                 if (snapshot.cells.isEmpty()) {
                     Text("Belum ada data")
+                    if (!lokasiAktif) {
+                        Text(
+                            "Lokasi sistem sedang mati. Android hanya memberi data band " +
+                                "dan channel bila Lokasi dinyalakan " +
+                                "(Pengaturan > Lokasi), lalu tunggu beberapa detik.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 } else {
                     snapshot.cells.take(8).forEach { c ->
                         val tanda = if (c.terdaftar) " (terdaftar)" else ""
