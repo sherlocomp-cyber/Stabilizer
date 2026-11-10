@@ -167,14 +167,16 @@ class NetworkMonitor(context: Context) {
         is CellInfoNr -> {
             val id = info.cellIdentity as? CellIdentityNr
             val bands = id?.bands
+            val arfcn = id?.nrarfcn?.validOrNull()
             CellDetail(
                 tech = "5G NR",
                 band = if (bands != null && bands.isNotEmpty()) {
                     bands.joinToString(", ") { "n$it" }
                 } else {
-                    "-"
+                    // Sebagian ROM tidak mengisi band NR; perkirakan dari NR-ARFCN.
+                    nrBandDariArfcn(arfcn) ?: "-"
                 },
-                channel = id?.nrarfcn?.validOrNull(),
+                channel = arfcn,
                 pci = id?.pci?.validOrNull(),
                 terdaftar = info.isRegistered
             )
@@ -258,4 +260,29 @@ class NetworkMonitor(context: Context) {
             publish()
         }
     }
+}
+
+/**
+ * Perkiraan band NR dari NR-ARFCN (rumus 3GPP TS 38.104 untuk frekuensi di bawah 24 GHz),
+ * dipetakan ke band yang umum dipakai operator Indonesia. Hanya tebakan bila ROM
+ * tidak mengisi band; diberi label "perkiraan".
+ */
+private fun nrBandDariArfcn(arfcn: Int?): String? {
+    if (arfcn == null || arfcn < 0) return null
+    val mhz: Double = when {
+        arfcn < 600000 -> arfcn * 0.005
+        arfcn < 2016667 -> 3000.0 + (arfcn - 600000) * 0.015
+        else -> return null
+    }
+    val band = when {
+        mhz in 758.0..803.0 -> "n28"
+        mhz in 925.0..960.0 -> "n8"
+        mhz in 1805.0..1880.0 -> "n3"
+        mhz in 2110.0..2170.0 -> "n1"
+        mhz in 2300.0..2400.0 -> "n40"
+        mhz in 2496.0..2690.0 -> "n41"
+        mhz in 3300.0..3800.0 -> "n78"
+        else -> return null
+    }
+    return "$band (perkiraan)"
 }
