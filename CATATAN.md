@@ -41,7 +41,8 @@ Aplikasi biasa **bisa**:
 - Kotlin + Jetpack Compose, Gradle Kotlin DSL. Package: `id.sherlocomp.stabilizer`.
 - Versi yang dipakai (terbukti build hijau sampai Tahap 4a): AGP 8.7.3, Kotlin 2.0.21, Compose BOM 2024.10.01, Gradle 8.10.2, Java 17, compileSdk/targetSdk 35.
 - **minSdk 31** supaya cukup memakai `TelephonyCallback`. Cocok untuk POCO F5 (Android 13+) dan iQOO 15R.
-- Tanpa library tambahan (tanpa coroutines eksplisit): thread memakai `Executors` + `Handler`, status UI memakai `mutableStateOf`. (`LaunchedEffect` dari Compose dipakai di MainActivity, itu bagian runtime Compose, bukan library baru.)
+- Tanpa library tambahan (tanpa coroutines eksplisit): thread memakai `Executors` + `Handler`, status UI memakai `mutableStateOf`. (`LaunchedEffect` dari Compose dipakai di MainActivity dan GuardCard, itu bagian runtime Compose, bukan library baru.)
+- Penyimpanan ringan: `SharedPreferences` bernama `stabilizer` (kunci `riwayat`). Tanpa database.
 - Tidak butuh root.
 - **Tidak ada Gradle wrapper** di repo (jar biner). Workflow memasang Gradle 8.10.2 dan menjalankan `gradle assembleDebug`.
 - APK dibuat lewat **GitHub Actions** (`.github/workflows/build-apk.yml`), jalan otomatis di tiap push ke main. APK debug: tab Actions > run terbaru > Artifacts > `stabilizer-debug-apk`.
@@ -56,10 +57,10 @@ Aplikasi biasa **bisa**:
   - `MainActivity.kt`: minta izin, memulai/menghentikan monitor, membuat `QualityTester`. Memakai `LaunchedEffect(hasilUji)` untuk mencatat `konteksSinyal(...)` dari sinyal saat hasil uji baru keluar, lalu menampilkan `MonitorScreen` dengan `konteksUji` dan `penjaga = { GuardCard() }`.
   - `NetworkSnapshot.kt`: model data (`SignalMetrics`, `CellDetail`, `NetworkSnapshot`), `labelJaringan`, `kualitasRsrp`, `kualitasSinr`, `validOrNull`
   - `NetworkMonitor.kt`: `TelephonyCallback` (kekuatan sinyal + display info NSA/SA) dan `requestCellInfoUpdate` tiap 3 detik (band, channel, PCI). Bila band NR kosong, `nrBandDariArfcn()` memperkirakannya dari NR-ARFCN (label "perkiraan"). Terbukti jalan di iQOO 15R: tampil "n40 (perkiraan)".
-  - `QualityTester.kt`: model hasil, `ringkasan()` (penilaian dari loss/jitter terburuk: Stabil / Kurang stabil >15 ms atau >1% / Tidak stabil >40 ms atau >5% / Sangat buruk >=20%), `konteksSinyal(nr, lte)` (teks RSRP/SINR 5G dan 4G beserta label kualitas, plus catatan bila SINR 5G < 0 dB), uji latency TCP (3 host x 20 sampel), jitter, persen gagal, unduh opsional dari speed.cloudflare.com (maks 10 MB atau 8 detik). Penilaian `ringkasan()` sendiri tetap tidak memakai sinyal; sinyal hanya ditampilkan di sebelahnya.
+  - `QualityTester.kt`: model hasil, `ringkasan()` (penilaian dari loss/jitter terburuk: Stabil / Kurang stabil >15 ms atau >1% / Tidak stabil >40 ms atau >5% / Sangat buruk >=20%), `konteksSinyal(nr, lte)` (teks RSRP/SINR 5G dan 4G beserta label kualitas, plus catatan bila SINR 5G < 0 dB), uji latency TCP (3 host x 20 sampel), jitter, persen gagal, unduh opsional dari speed.cloudflare.com (maks 10 MB atau 8 detik). `ringkasan()` tidak memakai sinyal; sinyal hanya ditampilkan di sebelahnya.
   - `QualityCard.kt`: kartu UI uji kualitas (tombol mulai/batal, saklar unduh, hasil). Parameter `konteks: String?` menampilkan blok "Sinyal saat uji selesai".
-  - `StabilizerService.kt` (Tahap 4a): foreground service. Punya `NetworkMonitor` sendiri (terpisah dari yang di Activity; bisa digabung nanti), memperbarui notifikasi tiap 5 detik (jenis jaringan, RSRP NR/LTE), `registerNetworkCallback` transport CELLULAR: `onLost` mencatat riwayat dan menampilkan notifikasi "Koneksi seluler putus", `onAvailable` mencatat tersambung kembali beserta lama putus. Riwayat 10 entri terakhir (hanya di memori, hilang bila proses mati). API: `StabilizerService.mulai(context)`, `henti(context)`, `berjalan`, `riwayat`.
-  - `GuardCard.kt` (Tahap 4a): kartu UI "Penjaga koneksi": saklar layanan (meminta izin notifikasi di Android 13+), tombol "Izinkan abaikan optimasi baterai" (disembunyikan bila sudah dikecualikan), daftar riwayat.
+  - `StabilizerService.kt` (4a + 4b): foreground service. Punya `NetworkMonitor` sendiri (terpisah dari yang di Activity; belum digabung), memperbarui notifikasi tiap 5 detik (jenis jaringan, RSRP NR/LTE), `registerNetworkCallback` transport CELLULAR: `onLost` mencatat riwayat dan menampilkan notifikasi "Koneksi seluler putus", `onAvailable` mencatat tersambung kembali beserta lama putus. **4b: riwayat 20 entri, format "dd/MM HH:mm:ss teks", disimpan ke SharedPreferences tiap dicatat dan dimuat saat service dibuat / kartu tampil.** API: `StabilizerService.mulai(context)`, `henti(context)`, `muat(context)`, `hapusRiwayat(context)`, `berjalan`, `riwayat`.
+  - `GuardCard.kt` (4a + 4b): kartu UI "Penjaga koneksi": saklar layanan (meminta izin notifikasi di Android 13+), tombol "Izinkan abaikan optimasi baterai" (diganti teks bila sudah dikecualikan), teks tips umum (kunci aplikasi di recent apps, izinkan aktivitas latar belakang; nama menu **belum diverifikasi** di iQOO/OriginOS), daftar riwayat + tombol "Hapus riwayat".
   - `MonitorScreen.kt`: layar Compose (jaringan, kartu sinyal 5G dan 4G, sel terdaftar, kartu uji kualitas, slot `penjaga`, parameter `konteksUji`). Menampilkan petunjuk merah di kartu sel bila Lokasi sistem mati.
 - `app/src/main/res/values/strings.xml`, `themes.xml`
 - `.github/workflows/build-apk.yml`
@@ -67,8 +68,8 @@ Aplikasi biasa **bisa**:
 ## Roadmap
 1. Rangka proyek + workflow build APK. **Selesai, build hijau.**
 2. Monitor jaringan: jenis 4G/5G, RSRP/RSRQ/SINR, band, operator. **Selesai dan terbukti di iQOO 15R (termasuk band NR perkiraan).**
-3. Uji kualitas: ping (TCP), jitter, packet loss, throughput singkat. **Selesai, terbukti di iQOO 15R.** Sinyal saat uji kini ditampilkan (kode di-push, belum dicek build/HP). Riwayat hasil uji (grafik/daftar) belum dibuat.
-4. Layanan penstabil (foreground service): notifikasi sinyal, deteksi putus, whitelist baterai. **4a: build hijau, terpasang di iQOO 15R, saklar dan riwayat tampil, layanan jalan. Belum dibuktikan: deteksi putus, kelangsungan di latar belakang, pengecualian baterai.**
+3. Uji kualitas: ping (TCP), jitter, packet loss, throughput singkat. **Selesai, terbukti di iQOO 15R.** Sinyal saat uji ditampilkan (di-push, belum dicek build/HP). Riwayat hasil uji (daftar/grafik) belum dibuat.
+4. Layanan penstabil (foreground service): notifikasi sinyal, deteksi putus, whitelist baterai. **4a: build hijau, terpasang di iQOO 15R, saklar dan riwayat tampil. 4b (sebagian): riwayat putus tersimpan, tombol hapus, tips (di-push, build belum dicek).** Belum dibuktikan di HP: deteksi putus, kelangsungan di latar belakang, pengecualian baterai. Belum dikerjakan dari 4b: menyatukan `NetworkMonitor`, naik versi.
 5. Mode Fokus Aplikasi (VpnService per aplikasi): pilih satu aplikasi, prioritaskan, opsi batasi aplikasi lain.
 6. Pintasan dan profil per perangkat (iQOO 15R, POCO F5) + tips pengaturan.
 7. Opsional: integrasi Shizuku.
@@ -80,10 +81,11 @@ Aplikasi biasa **bisa**:
 - [x] Tahap 3: uji kualitas. Commit `6ee1721`, build hijau (run 42782019449).
 - [x] Perkiraan band NR dari ARFCN: build hijau, tampil "n40 (perkiraan)" di iQOO 15R.
 - [x] Tahap 4a: build hijau (pengguna memasangnya). Screenshot 15:49: kartu Penjaga "Aktif", riwayat "15:45:41 Seluler tersedia", ikon notifikasi bulat "i" di status bar (kemungkinan notifikasi penjaga, belum dikonfirmasi isinya).
-- [ ] Tahap 4a belum teruji penuh: (a) isi notifikasi tetap; (b) deteksi putus + notifikasi putus; (c) layanan bertahan setelah aplikasi ditutup dari recent apps; (d) tombol pengecualian baterai (di screenshot tombol masih tampil, artinya belum dikecualikan). Pengguna belum melaporkan hasil uji (a)-(d).
-- [ ] **Konteks sinyal di kartu uji kualitas** di-push dalam 4 commit berurutan (QualityTester.kt, QualityCard.kt, MonitorScreen.kt, MainActivity.kt). **Build belum dicek.** Risiko kompilasi kecil: tipe parameter `kualitasRsrp`/`kualitasSinr` dan perbandingan `sinrNr < 0` (diasumsikan Int).
+- [ ] Tahap 4a belum teruji penuh: (a) isi notifikasi tetap; (b) deteksi putus + notifikasi putus; (c) layanan bertahan setelah aplikasi ditutup dari recent apps; (d) tombol pengecualian baterai (di screenshot 15:49 masih tampil, artinya belum dikecualikan). Pengguna belum melaporkan hasil uji (a)-(d).
+- [ ] **Konteks sinyal di kartu uji kualitas** (QualityTester.kt, QualityCard.kt, MonitorScreen.kt, MainActivity.kt) sudah di-push. **Build belum dicek.** Risiko kompilasi kecil: tipe parameter `kualitasRsrp`/`kualitasSinr` dan perbandingan `sinrNr < 0` (diasumsikan Int).
+- [ ] **Tahap 4b sebagian** (StabilizerService.kt, GuardCard.kt) sudah di-push. **Build belum dicek.** Risiko kompilasi kecil. Catatan perilaku: format waktu riwayat berubah (kini ada tanggal), entri lama dari APK sebelumnya tidak ada di penyimpanan jadi tidak terbawa.
 - [ ] POCO F5 belum diuji.
-- [ ] Tahap 4b sampai 8 belum dikerjakan.
+- [ ] Tahap 5 sampai 8 belum dikerjakan.
 
 ## Temuan perangkat (isi setelah pengguna menguji)
 ### iQOO 15R (operator XL, jaringan "5G NSA (LTE + NR)")
@@ -95,9 +97,9 @@ Aplikasi biasa **bisa**:
 - POCO F5: belum diuji.
 
 ## Langkah berikutnya
-1. Minta pengguna memasang APK terbaru (Actions > run terbaru > `stabilizer-debug-apk`). Jika build merah, minta log error dan perbaiki dulu. Jika hijau: (a) jalankan "Mulai uji" dan cek blok "Sinyal saat uji selesai" di kartu uji kualitas (RSRP/SINR 5G dan 4G, plus catatan bila SINR 5G < 0); (b) lanjutkan uji Tahap 4a: screenshot isi notifikasi "Stabilizer aktif"; matikan/hidupkan data seluler dan cek notifikasi putus serta riwayat "tersambung kembali (putus N dtk)"; tekan "Izinkan abaikan optimasi baterai"; tutup aplikasi dari recent apps, layar mati 5-10 menit, cek apakah notifikasi penjaga masih ada. Catat hasil di "Temuan perangkat".
-2. **Tahap 4b** (setelah uji 4a terbukti): satukan `NetworkMonitor` (satu instance untuk Activity dan service), simpan riwayat putus ke SharedPreferences supaya bertahan setelah proses mati, tambah petunjuk per ROM (autostart/baterai iQOO) di kartu penjaga. Naikkan versi di `app/build.gradle.kts` (baca isinya dulu).
-3. Riwayat hasil uji (waktu, RSRP, SINR, latency, unduh) disimpan dan ditampilkan sebagai daftar, supaya pola antar-menit bisa dilihat. Bisa digabung dengan 4b (SharedPreferences yang sama).
+1. Minta pengguna memasang APK terbaru (Actions > run terbaru > `stabilizer-debug-apk`). Jika build merah, minta log error dan perbaiki dulu. Jika hijau, uji di iQOO 15R: (a) "Mulai uji" lalu cek blok "Sinyal saat uji selesai"; (b) kartu Penjaga: teks tips tampil, riwayat bertanggal; matikan lalu hidupkan data seluler, cek riwayat "putus" dan "tersambung kembali (putus N dtk)"; tutup aplikasi sepenuhnya lalu buka lagi, cek riwayat masih ada (uji penyimpanan); tombol "Hapus riwayat" berfungsi; (c) screenshot isi notifikasi "Stabilizer aktif"; (d) tekan "Izinkan abaikan optimasi baterai"; (e) tutup dari recent apps, layar mati 5-10 menit, cek notifikasi penjaga masih ada. Catat hasil di "Temuan perangkat". Cek juga apakah teks tips cocok dengan nama menu di HP; koreksi bila beda.
+2. Sisa **Tahap 4b**: satukan `NetworkMonitor` (satu instance untuk Activity dan service), naikkan versi di `app/build.gradle.kts` (baca isinya dulu). Kerjakan setelah poin 1 terbukti.
+3. Riwayat hasil uji (waktu, RSRP, SINR, latency, unduh) disimpan dan ditampilkan sebagai daftar, supaya pola antar-menit bisa dilihat. Pakai SharedPreferences `stabilizer` dengan kunci terpisah.
 4. Lalu **Tahap 5** (Mode Fokus Aplikasi lewat VpnService). Jujur ke pengguna: ini mengurangi rebutan bandwidth antar aplikasi, tidak menambah kapasitas radio.
 
 ## Log
@@ -110,3 +112,4 @@ Aplikasi biasa **bisa**:
 - 2026-11-10: Tahap 4a di-push lewat put_file (StabilizerService.kt, GuardCard.kt, AndroidManifest.xml, MonitorScreen.kt, MainActivity.kt).
 - 2026-11-10: Pengguna memasang APK dengan 4a (build hijau). Screenshot 15:49: Penjaga aktif, band NR "n40 (perkiraan)" tampil, uji kualitas "Stabil". Belum ada uji putus/latar belakang/baterai. Temuan dicatat.
 - 2026-11-10: Pengguna minta lanjut tanpa melaporkan sisa uji 4a. Ditambahkan konteks sinyal di kartu uji kualitas (QualityTester.kt, QualityCard.kt, MonitorScreen.kt, MainActivity.kt). Build belum dicek.
+- 2026-11-10: Pengguna minta lanjut lagi tanpa laporan uji. Tahap 4b sebagian: riwayat putus tersimpan (SharedPreferences, 20 entri, bertanggal), tombol hapus, teks tips (StabilizerService.kt, GuardCard.kt). Build belum dicek.
