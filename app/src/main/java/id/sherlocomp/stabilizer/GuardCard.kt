@@ -18,21 +18,26 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 
-/** Kartu kontrol penjaga koneksi: saklar layanan, tombol baterai, riwayat putus. */
+/** Kartu kontrol penjaga koneksi: saklar layanan, tombol baterai, riwayat putus, tips. */
 @Composable
 fun GuardCard() {
     val context = LocalContext.current
     val berjalan = StabilizerService.berjalan
     val riwayat = StabilizerService.riwayat
+
+    // Muat riwayat yang tersimpan (bertahan walau aplikasi sempat dimatikan sistem).
+    LaunchedEffect(Unit) { StabilizerService.muat(context) }
 
     val peminta = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -91,9 +96,20 @@ fun GuardCard() {
                 }
             }
 
+            Text(
+                "Jika layanan sering mati sendiri (tips umum, nama menu bisa berbeda " +
+                    "di tiap versi sistem): kunci aplikasi ini di daftar aplikasi terbaru " +
+                    "(tahan kartu aplikasi lalu pilih kunci), dan di Pengaturan > Aplikasi > " +
+                    "Stabilizer > Baterai izinkan aktivitas latar belakang tanpa pembatasan.",
+                style = MaterialTheme.typography.labelSmall
+            )
+
             if (riwayat.isNotEmpty()) {
                 Text("Riwayat koneksi seluler", style = MaterialTheme.typography.labelMedium)
                 riwayat.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                OutlinedButton(onClick = { StabilizerService.hapusRiwayat(context) }) {
+                    Text("Hapus riwayat")
+                }
             }
         }
     }
