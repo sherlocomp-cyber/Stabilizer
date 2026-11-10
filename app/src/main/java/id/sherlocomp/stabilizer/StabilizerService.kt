@@ -82,6 +82,9 @@ class StabilizerService : Service() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+
+    // Monitor bersama dengan layar (lihat MonitorBersama). Tidak null berarti layanan
+    // ini sudah terhitung sebagai pemakai dan harus memanggil selesai() saat berhenti.
     private var monitor: NetworkMonitor? = null
     private var aktif = false
     private var terdaftarCallback = false
@@ -143,9 +146,8 @@ class StabilizerService : Service() {
             startForeground(ID_JAGA, notif)
         }
         berjalan = true
-        val m = NetworkMonitor(this)
-        m.start()
-        monitor = m
+        MonitorBersama.mulai(this)
+        monitor = MonitorBersama.instans(this)
         daftarkanCallback()
         handler.postDelayed(pembaruNotif, 3000L)
         return START_NOT_STICKY
@@ -155,7 +157,7 @@ class StabilizerService : Service() {
         aktif = false
         berjalan = false
         handler.removeCallbacksAndMessages(null)
-        monitor?.stop()
+        if (monitor != null) MonitorBersama.selesai()
         monitor = null
         if (terdaftarCallback) {
             try {
