@@ -29,7 +29,8 @@ fun MonitorScreen(
     quality: QualityState,
     onMulaiUji: (Boolean) -> Unit,
     onBatalUji: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    penjaga: @Composable () -> Unit = {}
 ) {
     val context = LocalContext.current
     val versi = remember {
@@ -118,6 +119,8 @@ fun MonitorScreen(
         }
 
         QualityCard(state = quality, onMulai = onMulaiUji, onBatal = onBatalUji)
+
+        penjaga()
 
         if (snapshot.updatedAtMs > 0L) {
             val jam = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
