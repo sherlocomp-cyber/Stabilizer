@@ -38,7 +38,9 @@ class StabilizerService : Service() {
         private const val CH_PUTUS = "putus"
         private const val ID_JAGA = 1
         private const val ID_PUTUS = 2
-        private const val MAKS_RIWAYAT = 10
+        private const val MAKS_RIWAYAT = 20
+        private const val PREFS = "stabilizer"
+        private const val KEY_RIWAYAT = "riwayat"
 
         /** Dibaca UI untuk menampilkan status saklar. */
         var berjalan by mutableStateOf(false)
@@ -57,6 +59,25 @@ class StabilizerService : Service() {
 
         fun henti(context: Context) {
             context.stopService(Intent(context, StabilizerService::class.java))
+        }
+
+        /** Memuat riwayat tersimpan bila di memori masih kosong. Panggil dari thread utama. */
+        fun muat(context: Context) {
+            if (riwayat.isNotEmpty()) return
+            val teks = context.applicationContext
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_RIWAYAT, null) ?: return
+            riwayat = teks.split("\n").filter { it.isNotBlank() }.take(MAKS_RIWAYAT)
+        }
+
+        /** Menghapus riwayat di memori dan di penyimpanan. Panggil dari thread utama. */
+        fun hapusRiwayat(context: Context) {
+            riwayat = emptyList()
+            context.applicationContext
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .remove(KEY_RIWAYAT)
+                .apply()
         }
     }
 
@@ -102,6 +123,7 @@ class StabilizerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        muat(this)
         val nm = getSystemService(NotificationManager::class.java)
         nm?.createNotificationChannel(
             NotificationChannel(CH_JAGA, "Penjaga koneksi", NotificationManager.IMPORTANCE_LOW)
@@ -162,8 +184,16 @@ class StabilizerService : Service() {
     }
 
     private fun catat(teks: String) {
-        val jam = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+        val jam = SimpleDateFormat("dd/MM HH:mm:ss", Locale.getDefault()).format(Date())
         riwayat = (listOf("$jam $teks") + riwayat).take(MAKS_RIWAYAT)
+        try {
+            applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_RIWAYAT, riwayat.joinToString("\n"))
+                .apply()
+        } catch (e: Exception) {
+            // Gagal menyimpan tidak boleh mengganggu layanan.
+        }
     }
 
     private fun teksStatus(): String {
