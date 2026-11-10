@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +52,18 @@ private fun StabilizerApp() {
 
     var izinOk by remember { mutableStateOf(semuaIzinAda()) }
 
+    // Sinyal dicatat saat hasil uji baru keluar, bukan sinyal yang terus berubah.
+    var konteksUji by remember { mutableStateOf<String?>(null) }
+    val hasilUji = tester.state.result
+    LaunchedEffect(hasilUji) {
+        konteksUji = if (hasilUji == null) {
+            null
+        } else {
+            val s = monitor.snapshot
+            konteksSinyal(s.nr, s.lte)
+        }
+    }
+
     val peminta = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
@@ -76,6 +89,7 @@ private fun StabilizerApp() {
         modifier = Modifier
             .fillMaxSize()
             .safeDrawingPadding(),
+        konteksUji = konteksUji,
         penjaga = { GuardCard() }
     )
 }
