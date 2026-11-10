@@ -53,6 +53,7 @@ private fun StabilizerApp() {
     var izinOk by remember { mutableStateOf(semuaIzinAda()) }
 
     // Sinyal dicatat saat hasil uji baru keluar, bukan sinyal yang terus berubah.
+    // Pada saat yang sama hasil uji disimpan ke riwayat uji.
     var konteksUji by remember { mutableStateOf<String?>(null) }
     val hasilUji = tester.state.result
     LaunchedEffect(hasilUji) {
@@ -60,6 +61,7 @@ private fun StabilizerApp() {
             null
         } else {
             val s = monitor.snapshot
+            RiwayatUji.catat(context, hasilUji, s.nr, s.lte)
             konteksSinyal(s.nr, s.lte)
         }
     }
@@ -90,6 +92,9 @@ private fun StabilizerApp() {
             .fillMaxSize()
             .safeDrawingPadding(),
         konteksUji = konteksUji,
-        penjaga = { GuardCard() }
+        penjaga = {
+            GuardCard()
+            RiwayatUjiCard()
+        }
     )
 }
