@@ -27,10 +27,11 @@ Aplikasi biasa tanpa root **tidak bisa**:
 - Mengubah preferred network type (butuh izin MODIFY_PHONE_STATE).
 - Menyalakan/mematikan mode pesawat lewat kode.
 - Mengedit APN langsung (butuh izin privileged). Hanya bisa membuka layar pengaturannya.
+- ICMP ping (butuh root). Latency diukur lewat waktu connect TCP port 443.
 
 Aplikasi biasa **bisa**:
 - Memantau: jenis jaringan (LTE/NR), indikasi NSA/SA (TelephonyDisplayInfo), RSRP/RSRQ/SINR, band/ARFCN dari cell info. Perlu izin READ_PHONE_STATE dan lokasi.
-- Mengukur kualitas: latency, jitter, packet loss, throughput singkat.
+- Mengukur kualitas: latency, jitter, packet loss (versi TCP), throughput singkat.
 - Menjaga stabilitas: foreground service, WakeLock, deteksi koneksi putus lewat NetworkCallback, notifikasi, minta pengecualian optimasi baterai.
 - Mode Fokus Aplikasi lewat VpnService (addAllowedApplication / addDisallowedApplication): lalu lintas satu aplikasi diprioritaskan, aplikasi lain bisa dibatasi. Ini mengurangi rebutan bandwidth, **tidak** menambah kapasitas radio.
 - Membuka pintasan pengaturan jaringan (dan menu info telepon bila ada di ROM tersebut).
@@ -39,7 +40,8 @@ Aplikasi biasa **bisa**:
 ## Keputusan teknis
 - Kotlin + Jetpack Compose, Gradle Kotlin DSL. Package: `id.sherlocomp.stabilizer`.
 - Versi yang dipakai (terbukti build hijau): AGP 8.7.3, Kotlin 2.0.21, Compose BOM 2024.10.01, Gradle 8.10.2, Java 17, compileSdk/targetSdk 35.
-- **minSdk 31** (naik dari 29 di Tahap 2) supaya cukup memakai `TelephonyCallback`, tanpa jalur `PhoneStateListener` lama. Cocok untuk POCO F5 (Android 13+) dan iQOO 15R.
+- **minSdk 31** supaya cukup memakai `TelephonyCallback`. Cocok untuk POCO F5 (Android 13+) dan iQOO 15R.
+- Tanpa library tambahan (tanpa coroutines eksplisit): thread memakai `Executors` + `Handler`, status UI memakai `mutableStateOf`.
 - Tidak butuh root.
 - **Tidak ada Gradle wrapper** di repo (jar biner). Workflow memasang Gradle 8.10.2 dan menjalankan `gradle assembleDebug`.
 - APK dibuat lewat **GitHub Actions** (`.github/workflows/build-apk.yml`), jalan otomatis di tiap push ke main. APK debug: tab Actions > run terbaru > Artifacts > `stabilizer-debug-apk`.
@@ -47,20 +49,22 @@ Aplikasi biasa **bisa**:
 
 ## Peta file
 - `settings.gradle.kts`, `build.gradle.kts`, `gradle.properties`, `.gitignore`
-- `app/build.gradle.kts` (versionName 0.2.0)
-- `app/src/main/AndroidManifest.xml` (izin: READ_PHONE_STATE, ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION, ACCESS_NETWORK_STATE; **belum ada INTERNET**)
+- `app/build.gradle.kts` (versionName 0.3.0, versionCode 3)
+- `app/src/main/AndroidManifest.xml` (izin: READ_PHONE_STATE, ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION, ACCESS_NETWORK_STATE, INTERNET)
 - `app/src/main/java/id/sherlocomp/stabilizer/`
-  - `MainActivity.kt`: minta izin, memulai/menghentikan monitor, menampilkan `MonitorScreen`
+  - `MainActivity.kt`: minta izin, memulai/menghentikan monitor, membuat `QualityTester`, menampilkan `MonitorScreen`
   - `NetworkSnapshot.kt`: model data (`SignalMetrics`, `CellDetail`, `NetworkSnapshot`), `labelJaringan`, `kualitasRsrp`, `kualitasSinr`, `validOrNull`
   - `NetworkMonitor.kt`: `TelephonyCallback` (kekuatan sinyal + display info NSA/SA) dan `requestCellInfoUpdate` tiap 3 detik (band, channel, PCI)
-  - `MonitorScreen.kt`: layar Compose (jaringan, kartu sinyal 5G dan 4G, sel terdaftar)
+  - `QualityTester.kt`: model hasil, `ringkasan()`, uji latency TCP (3 host x 20 sampel), jitter, persen gagal, unduh opsional dari speed.cloudflare.com (maks 10 MB atau 8 detik)
+  - `QualityCard.kt`: kartu UI uji kualitas (tombol mulai/batal, saklar unduh, hasil)
+  - `MonitorScreen.kt`: layar Compose (jaringan, kartu sinyal 5G dan 4G, sel terdaftar, kartu uji kualitas)
 - `app/src/main/res/values/strings.xml`, `themes.xml`
 - `.github/workflows/build-apk.yml`
 
 ## Roadmap
 1. Rangka proyek + workflow build APK. **Selesai, build hijau.**
-2. Monitor jaringan: jenis 4G/5G, RSRP/RSRQ/SINR, band, operator. **Kode selesai, build hijau. Belum diuji di HP.**
-3. Uji kualitas: ping, jitter, packet loss, throughput singkat, riwayat grafik sederhana.
+2. Monitor jaringan: jenis 4G/5G, RSRP/RSRQ/SINR, band, operator. **Selesai, build hijau. Belum diuji di HP.**
+3. Uji kualitas: ping (TCP), jitter, packet loss, throughput singkat. **Selesai, build hijau. Belum diuji di HP.** Riwayat grafik belum dibuat (ditunda ke Tahap 8 atau menyatu dengan Tahap 4).
 4. Layanan penstabil (foreground service): WakeLock, deteksi putus, notifikasi, whitelist baterai.
 5. Mode Fokus Aplikasi (VpnService per aplikasi): pilih satu aplikasi, prioritaskan, opsi batasi aplikasi lain.
 6. Pintasan dan profil per perangkat (iQOO 15R, POCO F5) + tips pengaturan.
@@ -68,24 +72,28 @@ Aplikasi biasa **bisa**:
 8. Rapikan UI, ikon, rilis APK.
 
 ## Status
-- [x] Tahap 1: rangka proyek + workflow. Build hijau (dua run sukses).
-- [x] Tahap 2: monitor jaringan. Commit `53cc975`, build hijau (run 42781221654).
-- [ ] Belum ada hasil uji di HP asli (iQOO 15R, POCO F5). Risiko: nilai kosong atau berbeda di ROM tertentu, atau data band/channel tidak keluar.
-- [ ] Tahap 3 sampai 8 belum dikerjakan.
+- [x] Tahap 1: rangka proyek + workflow. Build hijau.
+- [x] Tahap 2: monitor jaringan. Commit `53cc975`, build hijau.
+- [x] Tahap 3: uji kualitas. Commit `6ee1721`, build hijau (run 42782019449).
+- [ ] Belum ada hasil uji di HP asli (iQOO 15R, POCO F5) untuk Tahap 2 dan 3. Risiko: nilai kosong di ROM tertentu; band/channel mungkin tidak keluar; uji unduh bisa gagal bila Cloudflare diblokir.
+- [ ] Tahap 4 sampai 8 belum dikerjakan.
 
 ## Temuan perangkat (isi setelah pengguna menguji)
 - iQOO 15R: belum diuji
 - POCO F5: belum diuji
 
 ## Langkah berikutnya
-1. Minta pengguna mengunduh APK Tahap 2 (GitHub > Actions > run terbaru yang hijau > Artifacts > `stabilizer-debug-apk`), memasangnya, memberi izin Telepon dan Lokasi, lalu melaporkan untuk tiap HP: apakah jenis jaringan, RSRP/RSRQ/SINR, band, channel muncul atau kosong, dan apa yang tertulis. Catat di "Temuan perangkat". Kalau ada yang kosong atau salah, perbaiki `NetworkMonitor.kt` sebelum lanjut.
-2. Kerjakan **Tahap 3** (uji kualitas). Rencana awal (tebakan, sesuaikan):
-   - Tambah izin `android.permission.INTERNET` di manifest.
-   - Kelas `QualityTester.kt`: ukur latency lewat waktu connect TCP ke beberapa host (ICMP ping butuh root), ambil sekitar 20 sampel, hitung rata-rata, jitter, dan persen gagal (packet loss versi TCP).
-   - Throughput singkat: unduh file kecil dari server publik dan hitung Mbps. Pakai coroutine atau thread terpisah, jangan di thread utama.
-   - Layar baru atau kartu baru di `MonitorScreen`, dengan tombol "Mulai uji".
+1. Minta pengguna mengunduh APK terbaru (GitHub > Actions > run terbaru yang hijau > Artifacts > `stabilizer-debug-apk`), memasangnya, memberi izin, lalu melaporkan per HP: (a) apakah jenis jaringan, RSRP/RSRQ/SINR, band, channel muncul; (b) hasil "Mulai uji" (latency, jitter, gagal %), dengan dan tanpa uji unduh. Catat di "Temuan perangkat". Perbaiki bila ada yang kosong atau salah. Jika pengguna belum sempat menguji, boleh lanjut ke langkah 2 tapi jangan menjanjikan hasil.
+2. Kerjakan **Tahap 4** (layanan penstabil). Rencana awal (tebakan, sesuaikan):
+   - `StabilizerService` sebagai foreground service dengan notifikasi tetap (menampilkan jenis jaringan dan RSRP terakhir). Android 14+ mewajibkan tipe foreground service: pakai `foregroundServiceType="specialUse"` (sideload, tidak butuh Play Store) dengan `<property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" .../>`.
+   - Izin baru di manifest: `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS` (minta saat runtime di Android 13+), `WAKE_LOCK`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`.
+   - Pindahkan `NetworkMonitor` agar bisa hidup di service (bukan hanya di Activity).
+   - `ConnectivityManager.registerNetworkCallback` untuk transport CELLULAR: catat waktu `onLost` / `onAvailable`, tampilkan notifikasi "koneksi seluler putus" dan riwayat putus.
+   - Tombol "Izinkan abaikan optimasi baterai" yang membuka `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`.
+   - Jujur ke pengguna: ini menjaga proses tetap hidup dan memberi tahu saat putus; tidak memperbaiki sinyal radio.
 
 ## Log
 - 2026-11-10: repo kosong; CATATAN.md pertama dibuat.
 - 2026-11-10: Tahap 1 di-push. Build hijau.
 - 2026-11-10: Tahap 2 (monitor jaringan) di-push lewat git. minSdk jadi 31. Build hijau. APK tidak bisa diunduh dari sandbox; pengguna ambil dari Actions.
+- 2026-11-10: Tahap 3 (uji kualitas) di-push. Build hijau.
