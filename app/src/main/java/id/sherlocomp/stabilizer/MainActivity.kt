@@ -75,6 +75,7 @@ private fun StabilizerApp() {
         onBatalUji = { tester.cancel() },
         modifier = Modifier
             .fillMaxSize()
-            .safeDrawingPadding()
+            .safeDrawingPadding(),
+        penjaga = { GuardCard() }
     )
 }
