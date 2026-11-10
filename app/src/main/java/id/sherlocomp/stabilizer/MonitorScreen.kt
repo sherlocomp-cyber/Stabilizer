@@ -30,6 +30,7 @@ fun MonitorScreen(
     onMulaiUji: (Boolean) -> Unit,
     onBatalUji: () -> Unit,
     modifier: Modifier = Modifier,
+    konteksUji: String? = null,
     penjaga: @Composable () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -118,7 +119,12 @@ fun MonitorScreen(
             }
         }
 
-        QualityCard(state = quality, onMulai = onMulaiUji, onBatal = onBatalUji)
+        QualityCard(
+            state = quality,
+            onMulai = onMulaiUji,
+            onBatal = onBatalUji,
+            konteks = konteksUji
+        )
 
         penjaga()
 
