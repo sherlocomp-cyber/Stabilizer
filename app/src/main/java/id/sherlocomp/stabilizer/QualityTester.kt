@@ -48,6 +48,38 @@ fun ringkasan(result: QualityResult): String {
 }
 
 /**
+ * Teks kondisi sinyal yang ditampilkan di samping hasil uji, supaya terlihat
+ * apakah hasil jelek/bagus bersamaan dengan sinyal lemah atau SINR rendah.
+ * Dihitung dari sinyal pada saat uji selesai. Mengembalikan null bila tidak ada data.
+ */
+fun konteksSinyal(nr: SignalMetrics?, lte: SignalMetrics?): String? {
+    val bagian = ArrayList<String>()
+
+    fun tambah(nama: String, m: SignalMetrics?) {
+        if (m == null) return
+        val rsrp = m.rsrp
+        val sinr = m.sinr
+        if (rsrp == null && sinr == null) return
+        val a = if (rsrp != null) "RSRP $rsrp dBm (${kualitasRsrp(rsrp)})" else "RSRP -"
+        val b = if (sinr != null) "SINR $sinr dB (${kualitasSinr(sinr)})" else "SINR -"
+        bagian.add("$nama: $a, $b")
+    }
+
+    tambah("5G", nr)
+    tambah("4G", lte)
+    if (bagian.isEmpty()) return null
+
+    val sinrNr = nr?.sinr
+    if (sinrNr != null && sinrNr < 0) {
+        bagian.add(
+            "Catatan: SINR 5G di bawah 0 dB biasanya berarti interferensi atau sel padat. " +
+                "Latency dan kecepatan bisa naik-turun walau RSRP tidak buruk."
+        )
+    }
+    return bagian.joinToString("\n")
+}
+
+/**
  * Uji kualitas koneksi tanpa root. ICMP ping butuh root, jadi latency diukur dari
  * waktu membuka koneksi TCP ke port 443. "Packet loss" di sini = persen koneksi gagal.
  */
