@@ -22,6 +22,9 @@ fun MonitorScreen(
     snapshot: NetworkSnapshot,
     izinLengkap: Boolean,
     onMintaIzin: () -> Unit,
+    quality: QualityState,
+    onMulaiUji: (Boolean) -> Unit,
+    onBatalUji: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -83,6 +86,8 @@ fun MonitorScreen(
                 }
             }
         }
+
+        QualityCard(state = quality, onMulai = onMulaiUji, onBatal = onBatalUji)
 
         if (snapshot.updatedAtMs > 0L) {
             val jam = SimpleDateFormat("HH:mm:ss", Locale.getDefault())

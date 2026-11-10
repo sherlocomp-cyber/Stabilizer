@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
 private fun StabilizerApp() {
     val context = LocalContext.current
     val monitor = remember { NetworkMonitor(context) }
+    val tester = remember { QualityTester() }
 
     fun semuaIzinAda(): Boolean = IZIN_DIBUTUHKAN.all {
         ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
@@ -59,13 +60,19 @@ private fun StabilizerApp() {
 
     DisposableEffect(Unit) {
         monitor.start()
-        onDispose { monitor.stop() }
+        onDispose {
+            monitor.stop()
+            tester.cancel()
+        }
     }
 
     MonitorScreen(
         snapshot = monitor.snapshot,
         izinLengkap = izinOk,
         onMintaIzin = { peminta.launch(IZIN_DIBUTUHKAN) },
+        quality = tester.state,
+        onMulaiUji = { tester.start(it) },
+        onBatalUji = { tester.cancel() },
         modifier = Modifier
             .fillMaxSize()
             .safeDrawingPadding()
